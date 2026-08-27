@@ -1,0 +1,7 @@
+gurobipy>=10.0
+numpy>=1.24
+geopandas>=0.14
+rasterio>=1.3
+shapely>=2.0
+matplotlib>=3.7
+Pillow>=10.0          # optional — only needed for GIF animation
