@@ -1,0 +1,127 @@
+<PAMDataset>
+  <Metadata>
+    <MDI key="Creator">USGS EROS Landfire Product Service</MDI>
+    <MDI key="DataType">Thematic</MDI>
+  </Metadata>
+  <Metadata domain="Esri">
+    <MDI key="PyramidResamplingType">NEAREST</MDI>
+  </Metadata>
+  <PAMRasterBand band="1">
+    <Description>LF2020_Elev_CONUS</Description>
+    <UnitOfMeasure>Meters</UnitOfMeasure>
+    <Histograms>
+      <HistItem>
+        <HistMin>439</HistMin>
+        <HistMax>487</HistMax>
+        <BucketCount>256</BucketCount>
+        <IncludeOutOfRange>1</IncludeOutOfRange>
+        <Approximate>0</Approximate>
+        <HistCounts>21|0|0|0|0|2154|0|0|0|0|1119|0|0|0|0|1163|0|0|0|0|0|1047|0|0|0|0|827|0|0|0|0|640|0|0|0|0|0|388|0|0|0|0|356|0|0|0|0|305|0|0|0|0|0|273|0|0|0|0|281|0|0|0|0|283|0|0|0|0|0|331|0|0|0|0|383|0|0|0|0|524|0|0|0|0|0|539|0|0|0|0|464|0|0|0|0|416|0|0|0|0|367|0|0|0|0|0|340|0|0|0|0|393|0|0|0|0|441|0|0|0|0|0|472|0|0|0|0|433|0|0|0|0|442|0|0|0|0|0|426|0|0|0|0|449|0|0|0|0|431|0|0|0|0|0|419|0|0|0|0|377|0|0|0|0|341|0|0|0|0|0|337|0|0|0|0|278|0|0|0|0|268|0|0|0|0|207|0|0|0|0|0|190|0|0|0|0|168|0|0|0|0|131|0|0|0|0|0|110|0|0|0|0|107|0|0|0|0|90|0|0|0|0|0|49|0|0|0|0|30|0|0|0|0|21|0|0|0|0|0|18|0|0|0|0|4|0|0|0|0|5|0|0|0|0|0|2</HistCounts>
+      </HistItem>
+    </Histograms>
+    <Metadata>
+      <MDI key="BandName">LF2020_Elev_CONUS</MDI>
+      <MDI key="RepresentationType">ATHEMATIC</MDI>
+      <MDI key="STATISTICS_COVARIANCES">138.8811730542413,16.35658110697837,610.4537014627277,0,0,0,0,0</MDI>
+      <MDI key="STATISTICS_MAXIMUM">487</MDI>
+      <MDI key="STATISTICS_MEAN">454.0915164369</MDI>
+      <MDI key="STATISTICS_MEDIAN">452.929412</MDI>
+      <MDI key="STATISTICS_MINIMUM">439</MDI>
+      <MDI key="STATISTICS_SKIPFACTORX">1</MDI>
+      <MDI key="STATISTICS_SKIPFACTORY">1</MDI>
+      <MDI key="STATISTICS_STDDEV">11.784785660089</MDI>
+    </Metadata>
+  </PAMRasterBand>
+  <PAMRasterBand band="2">
+    <Description>LF2020_SlpD_CONUS</Description>
+    <UnitOfMeasure>Degrees</UnitOfMeasure>
+    <Histograms>
+      <HistItem>
+        <HistMin>0</HistMin>
+        <HistMax>16</HistMax>
+        <BucketCount>256</BucketCount>
+        <IncludeOutOfRange>1</IncludeOutOfRange>
+        <Approximate>0</Approximate>
+        <HistCounts>3440|0|0|0|0|0|0|0|0|0|0|0|0|0|0|5043|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|3535|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|2404|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|1684|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|1106|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|701|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|399|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|218|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|125|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|88|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|43|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|28|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|16|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|14|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|10|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|6</HistCounts>
+      </HistItem>
+    </Histograms>
+    <Metadata>
+      <MDI key="BandName">LF2020_SlpD_CONUS</MDI>
+      <MDI key="RepresentationType">ATHEMATIC</MDI>
+      <MDI key="STATISTICS_COVARIANCES">16.35658110697837,4.763521229741024,149.1972170210847,0,0,0,0,0</MDI>
+      <MDI key="STATISTICS_MAXIMUM">16</MDI>
+      <MDI key="STATISTICS_MEAN">2.3222693531283</MDI>
+      <MDI key="STATISTICS_MEDIAN">1.945098</MDI>
+      <MDI key="STATISTICS_MINIMUM">0</MDI>
+      <MDI key="STATISTICS_SKIPFACTORX">1</MDI>
+      <MDI key="STATISTICS_SKIPFACTORY">1</MDI>
+      <MDI key="STATISTICS_STDDEV">2.1825492502441</MDI>
+    </Metadata>
+  </PAMRasterBand>
+  <PAMRasterBand band="3">
+    <Description>LF2020_Asp_CONUS</Description>
+    <UnitOfMeasure>Degrees</UnitOfMeasure>
+    <Histograms>
+      <HistItem>
+        <HistMin>-1</HistMin>
+        <HistMax>359</HistMax>
+        <BucketCount>256</BucketCount>
+        <IncludeOutOfRange>1</IncludeOutOfRange>
+        <Approximate>0</Approximate>
+        <HistCounts>12037|20|27|29|35|17|11|46|21|36|16|29|39|19|41|16|20|41|23|23|12|39|22|12|33|13|44|27|23|35|27|40|10|18|43|26|44|15|42|24|11|48|23|39|21|21|54|20|31|23|20|47|29|39|29|51|21|17|37|26|42|13|23|47|20|34|19|22|57|20|33|31|46|24|15|56|30|50|23|23|51|21|61|17|21|59|24|45|30|48|15|23|45|19|38|28|26|38|26|31|18|30|37|24|39|19|37|17|11|34|13|46|15|14|34|24|29|18|20|38|22|36|14|40|13|18|34|20|28|17|10|28|16|32|17|15|24|16|30|15|20|9|11|30|15|30|12|16|27|17|32|11|9|27|19|22|18|24|17|14|29|15|26|17|16|30|14|22|16|13|31|16|40|11|26|12|22|28|19|35|10|18|30|19|35|7|18|50|8|29|22|44|18|26|60|26|29|14|21|36|24|37|28|11|34|16|42|21|51|26|17|46|16|43|26|23|39|25|42|29|22|39|17|37|18|42|19|19|44|29|43|22|18|45|14|45|10|24|33|16|27|13|42|16|20|38|18|43|15|33|46|19|22|22|24|14</HistCounts>
+      </HistItem>
+    </Histograms>
+    <Metadata>
+      <MDI key="BandName">LF2020_Asp_CONUS</MDI>
+      <MDI key="RepresentationType">ATHEMATIC</MDI>
+      <MDI key="STATISTICS_COVARIANCES">610.4537014627277,149.1972170210847,11275.94048796688,0,0,0,0,0</MDI>
+      <MDI key="STATISTICS_MAXIMUM">359</MDI>
+      <MDI key="STATISTICS_MEAN">63.119724284199</MDI>
+      <MDI key="STATISTICS_MEDIAN">-1.000000</MDI>
+      <MDI key="STATISTICS_MINIMUM">-1</MDI>
+      <MDI key="STATISTICS_SKIPFACTORX">1</MDI>
+      <MDI key="STATISTICS_SKIPFACTORY">1</MDI>
+      <MDI key="STATISTICS_STDDEV">106.1882314005</MDI>
+    </Metadata>
+  </PAMRasterBand>
+  <PAMRasterBand band="4">
+    <Description>LF2025_FBFM40_CONUS</Description>
+    <UnitOfMeasure>Class</UnitOfMeasure>
+    <Metadata>
+      <MDI key="BandName">LF2025_FBFM40_CONUS</MDI>
+      <MDI key="RepresentationType">ATHEMATIC</MDI>
+    </Metadata>
+  </PAMRasterBand>
+  <PAMRasterBand band="5">
+    <Description>LF2025_CC_CONUS</Description>
+    <UnitOfMeasure>Percent</UnitOfMeasure>
+    <Metadata>
+      <MDI key="BandName">LF2025_CC_CONUS</MDI>
+      <MDI key="RepresentationType">ATHEMATIC</MDI>
+    </Metadata>
+  </PAMRasterBand>
+  <PAMRasterBand band="6">
+    <Description>LF2025_CH_CONUS</Description>
+    <UnitOfMeasure>Meters * 10</UnitOfMeasure>
+    <Metadata>
+      <MDI key="BandName">LF2025_CH_CONUS</MDI>
+      <MDI key="RepresentationType">ATHEMATIC</MDI>
+    </Metadata>
+  </PAMRasterBand>
+  <PAMRasterBand band="7">
+    <Description>LF2025_CBH_CONUS</Description>
+    <UnitOfMeasure>Meters * 10</UnitOfMeasure>
+    <Metadata>
+      <MDI key="BandName">LF2025_CBH_CONUS</MDI>
+      <MDI key="RepresentationType">ATHEMATIC</MDI>
+    </Metadata>
+  </PAMRasterBand>
+  <PAMRasterBand band="8">
+    <Description>LF2025_CBD_CONUS</Description>
+    <UnitOfMeasure>Kilograms per cubic meter * 100</UnitOfMeasure>
+    <Metadata>
+      <MDI key="BandName">LF2025_CBD_CONUS</MDI>
+      <MDI key="RepresentationType">ATHEMATIC</MDI>
+    </Metadata>
+  </PAMRasterBand>
+</PAMDataset>
