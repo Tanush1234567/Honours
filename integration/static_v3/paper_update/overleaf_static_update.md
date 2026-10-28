@@ -1,0 +1,444 @@
+<a id="ch:introduction"></a>
+
+# Introduction
+
+Climate change is increasing both the frequency and severity of wildfires by altering temperature, precipitation, and vegetation patterns [@dennison2009climate], and burnt area in EU countries has repeatedly exceeded historical averages in recent fire seasons [@effis2024]. Aerial firefighting (AFF) remains one of the primary tools available to suppress wildfires before they escalate, yet the coordination of aircraft fleets during an active fire is still largely dependent on the experience and judgement of human operators. Given the scale, time pressure, and safety stakes involved, there is a clear need for decision-support tools that can compute efficient aircraft routing and suppression strategies fast enough to be usable in live operations.
+
+The Vehicle Routing Problem (VRP) and its variants have long been adapted to disaster and humanitarian relief settings, where capacity limits, multiple depots, and split deliveries are common features of the underlying logistics, as in the Split Delivery VRP [@dror1989split] and drone-based relief distribution under payload and energy constraints [@rabta2018drone]. @chalabi2024affvrp adapt these ideas specifically to wildfire suppression, introducing the Aerial FireFighting Vehicle Routing Problem (AFFVRP): a capacitated, multi-trip VRP with time windows and a hierarchical objective that first minimises time-to-last-drop and then total flight time, using a heterogeneous fleet of tankers and scoopers. @liu2025hierarchical extend this direction with a hierarchical decision-making model for multi-aircraft *formations*, explicitly modelling the water-release process and tactical coordination behaviours that pure routing formulations do not capture. These approaches motivate the joint consideration of aircraft logistics and the suppression actions through which water is delivered to a fire.
+
+Physically grounded fire spread models address the evolution of the fire itself. FARSITE [@finney1998farsite] propagates a fire perimeter using Huygens' principle of wavelet expansion driven by the Rothermel surface fire spread equations. DEVS-FIRE [@hu2012devsfire] instead represents the burning area through discrete-event cells that can respond to suppression inputs. Connecting a routing model to either representation requires more than transferring a list of target locations: aircraft actions must produce explicit changes in the fire state, and those changes must be accounted for consistently when the next set of decisions is made.
+
+This dissertation develops an optimisation framework for aerial firefighting that discretises the operational area into a finite grid of cells and a finite set of timesteps. Each cell carries one of three states — unburned, burning, or extinguished — and aircraft routing, water capacity, and suppression decisions are expressed over the same spatial and temporal representation. The broader framework is intended to support coupling with FARSITE in a rolling-horizon loop. Before that coupling can be evaluated, however, the routing and suppression model must be verified under conditions in which the expected outcome is known independently of the optimiser.
+
+The implementation examined in this dissertation therefore establishes a deterministic *static* experiment. Static refers to a fixed initial fire snapshot: there is no fire propagation, natural burnout, or stochastic change in the fire state during the optimisation horizon. Initially burning cells remain burning until sufficient water has been deposited on them. Aircraft remain heterogeneous, with tankers refilling at an airfield and scoopers at configured water sources, and water drops follow a cell-integrated hexagonal footprint with a Gaussian lateral profile. Suppression is determined by cumulative delivered litres rather than by a probabilistic extinguishment event.
+
+The resulting mixed-integer linear program is solved with Gurobi using two sequential objectives. The first minimises the sum of burning cells across the sampled time boundaries, measured in burning cell-steps. The second minimises total Manhattan flight distance without worsening the primary incumbent. These objectives distinguish the static experiment from the time-to-last-drop and total-flight-time hierarchy of @chalabi2024affvrp. In particular, reducing burning cell-steps rewards earlier suppression even when the entire fire cannot be extinguished within the available horizon.
+
+Verification combines independent schedule replay with five controlled cases whose optimal schedules can be derived by hand. These cases isolate a single drop, cumulative suppression across two drops, tanker refilling, scooper refilling, and a fire that cannot be reached under the discrete movement rule. Further regression checks address water conservation, terminal actions, aircraft occupancy, footprint geometry, and geographic input alignment. Small-case optimality is considered separately from the quality of time-limited solutions on the full landscape.
+
+A separate rolling-horizon pipeline provides the wider setting for future integration with FARSITE, run inside FlamMap. The static results reported here do not establish the correctness or operational performance of that dynamic coupling. Further work includes carrying aircraft state across successive windows, evaluating suppression feedback to fire spread, calibrating the suppression threshold against physical evidence, and introducing a discrete-event simulation layer using salabim [@vanderham2018salabim]. More detailed aircraft flight dynamics can then be assessed within that layer rather than assumed to follow from the present grid-based movement constraints.
+
+The remainder of the material is organised as follows. Chapter [2](#ch:literature) reviews fire propagation, water-drop dynamics, and aircraft routing. Chapter [3](#ch:method) presents the methodology and mathematical formulation of the static experiment. Chapter [4](#ch:static-validation) describes its verification procedure, reports the recorded validation outcomes, and examines the limitations of the full-landscape runs.
+
+<a id="ch:literature"></a>
+
+# Literature Review
+
+This chapter reviews the literature underpinning the three components of the framework developed in this dissertation: how fire spread is modelled (Section [2.1](#sec:lit-fire-propagation)), how water drops interact with a fire and with aircraft flight (Section [2.2](#sec:lit-water-dynamics)), and how aircraft routing and suppression decisions are formulated as an optimisation problem (Section [2.3](#sec:lit-optimisation)). Each section closes by connecting the reviewed material directly to the scope of the static implementation.
+
+<a id="sec:lit-fire-propagation"></a>
+
+## Fire Propagation
+
+Wildfire spread models include continuous, geometry-based representations of a fire perimeter and discrete, cell-based event representations. These approaches provide different interfaces through which a suppression model may interact with the fire.
+
+**FARSITE.** FARSITE [@finney1998farsite] simulates two-dimensional fire growth by treating points on the current fire perimeter as sources of expanding elliptical wavelets, following Huygens' principle. The advancing perimeter is obtained from the envelope of these wavelets. Local fuel, terrain, and weather conditions determine the rate and direction of spread, using the Rothermel surface fire spread equation,
+$$
+R = \frac{I_R\,\xi\,(1+\phi_w+\phi_s)}{\rho_b\,\varepsilon\,Q_{ig}},
+\tag{1}
+$$
+where $I_R$ is reaction intensity, $\xi$ is the propagating flux ratio, $\phi_w$ and $\phi_s$ are wind and slope coefficients, $\rho_b$ is bulk density, $\varepsilon$ is the effective heating number, and $Q_{ig}$ is the heat of pre-ignition. This provides a physically informed basis for propagating the fire. A coupling to the present optimisation framework must additionally translate scheduled water delivery into changes that can be passed back to the fire spread calculation; the cumulative-water rule developed here is a separate modelling component.
+
+**DEVS.** DEVS-FIRE [@hu2012devsfire] represents fire behaviour through interacting discrete-event cells. Cells exchange information with neighbouring cells, and suppression can be represented through external events that alter their state. The distinction between fire evolution and externally applied suppression is particularly useful for decision support, since an aircraft schedule can be translated into a sequence of events acting on a spatial fire representation.
+
+**Positioning.** The present framework adopts a three-state grid representation inspired by this separation between fire state and suppression events. The static implementation does not reproduce DEVS-FIRE's full state space or neighbour-to-neighbour propagation. Instead, it deliberately holds the initially burning set fixed and allows only water-driven transitions from burning to extinguished. The landscape raster supplies spatial dimensions and georeferencing, while ignition polygons identify the initial burning cells. Terrain and fuel values do not drive spread or suppression in this experiment. This isolates the correctness of routing and water accounting before introducing the additional uncertainty and feedback associated with FARSITE coupling.
+
+<a id="sec:lit-water-dynamics"></a>
+
+## Water Dynamics
+
+**Water release process and flight constraints.** @liu2025hierarchical distinguish arrival, release, and departure when modelling the water-release process. Aircraft speed, turning behaviour, release conditions, and terrain clearance influence whether a planned drop can be executed. These considerations motivate a distinction between a routing schedule and a physically executable aircraft trajectory.
+
+The present optimisation model adopts a simpler movement representation: aircraft occupy integer grid coordinates, and the displacement between successive boundaries is limited by a Manhattan-distance speed bound. Speed is constant for each aircraft type rather than varying with water load or flight phase. Bank-angle-limited turns, climb trajectories, terrain clearance, and continuous flight during release are outside the static formulation. Their evaluation is reserved for a subsequent simulation layer.
+
+**Drop pattern.** The water-dispersion representation follows the hexagonal footprint and Gaussian lateral profile discussed by @liu2025hierarchical. Let $x$ measure distance along the footprint from its leading end. With release height $h$, width coefficient $k$, tapered-end length $l_1$, and central plateau length $l_2$, the longitudinal width is
+$$
+\lambda(x,h) =
+    \begin{cases}
+        k h^{1.5}\,x/l_1, & 0 \leq x < l_1, \\[3pt]
+        k h^{1.5}, & l_1 \leq x \leq l_1+l_2, \\[3pt]
+        k h^{1.5}\,(2l_1+l_2-x)/l_1, & l_1+l_2 < x \leq 2l_1+l_2, \\[3pt]
+        0, & \text{otherwise}.
+    \end{cases}
+\tag{2}
+$$
+For positive width, the lateral profile takes the form
+$$
+\eta(x,y) = \frac{\lambda(x,h)}{\sqrt{2\pi\sigma(x,h)^2}}
+    \exp\!\left(-\frac{y^2}{2\sigma(x,h)^2}\right),
+    \qquad \sigma(x,h)=\lambda(x,h)/6.
+\tag{3}
+$$
+Here the hexagon limits the lateral support to three standard deviations on either side of its centreline.
+
+**Positioning.** The static implementation retains this footprint geometry but converts the profile into a normalised deposition density integrated over each raster cell. A density evaluated at a cell centre is not itself a deposited volume or an extinguishment probability. The numerical integration, normalisation, and conservative conversion into integer litres are therefore explicit parts of the methodology. Grid resolution is taken from the input raster or specified for a synthetic experiment; it is not automatically selected from the footprint's standard deviation. The heading is a deterministic input measured clockwise from north, and neither wind direction nor heading is sampled stochastically within the static experiment.
+
+<a id="sec:lit-optimisation"></a>
+
+## Optimisation
+
+**AFFVRP.** @chalabi2024affvrp formulate aerial firefighting as a capacitated, multi-trip routing problem with heterogeneous tankers and scoopers. Airfields, water bodies, and fire demands determine the routing structure. Their hierarchical objective first minimises the time of the latest drop and then total flight time. Splitting a fire into drop-sized demands makes aircraft capacity and repeated visits central to the formulation.
+
+The present model retains heterogeneous capacity and aircraft-specific refill locations, but expresses decisions through grid positions and action intervals rather than arcs between a predefined set of service nodes. A drop can affect several cells, and a cell can receive water from several drops before reaching its suppression threshold. Consequently, arriving at a target does not automatically extinguish it, and target demand is not reduced to a single compulsory visit.
+
+**Drone relief routing.** Payload-constrained humanitarian routing provides a related perspective on the connection between vehicle movement and the material being delivered [@rabta2018drone]. A representative payload-dependent arc cost is
+$$
+R_{ij}(w) = \gamma_0 + \gamma w_{ij}
+    + \delta_{ij}\left(\rho_0 + \rho w_{ij}\right),
+\tag{4}
+$$
+where $w_{ij}$ is the payload carried along an arc, $\delta_{ij}$ is distance, and the remaining coefficients describe fixed and payload-dependent costs. Such models emphasise that a route must remain consistent with the vehicle's available resources at every stage.
+
+**Positioning.** The corresponding conserved resource here is water. Each aircraft has an integer load in litres, explicit drop consumption, and an explicit refill completion event. Waiting or reaching a source does not restore water automatically. The current formulation does not include payload-dependent fuel consumption, energy constraints, or fire-priority time windows. Its temporal restrictions arise from the finite horizon, speed limits, and service durations. The primary objective is burning cell-steps, followed by actual Manhattan travel distance, rather than either a weighted combination of objectives or the original AFFVRP's time-to-last-drop hierarchy.
+
+<a id="sec:lit-synthesis"></a>
+
+## Synthesis
+
+Taken together, this review positions the present work as a synthesis of spatial fire-state representation, numerical water deposition, and resource-constrained aircraft routing. The static experiment makes the interaction between these components deterministic and inspectable. Its purpose is to establish that scheduled actions consume the correct amount of water, deliver it to the correct cells at the correct time, and induce the corresponding fire-state changes. Physical calibration and dynamic fire propagation remain separate requirements. This distinction provides a basis for extending the framework without attributing the behaviour of a coupled wildfire simulation to a routing model that has only been verified in isolation.
+
+<a id="ch:method"></a>
+
+# Methodology
+
+<a id="sec:method-scope"></a>
+
+## Experimental Design and Scope
+
+The methodology separates model construction, optimisation, and verification. First, a fixed fire scenario is prepared on a spatial grid. Second, numerical deposition coefficients are calculated for every eligible drop origin. Third, a mixed-integer linear program schedules aircraft movement, drops, and refills. Finally, the extracted schedule is replayed independently and compared with the predicted fire history and reported objectives. Controlled cases supply an additional comparison with solutions derived before optimisation.
+
+Static denotes the absence of fire propagation during the horizon, rather than an absence of time-dependent decisions. Aircraft still move, water loads change, and burning cells can become extinguished. There is no natural burnout, re-ignition, evaporation, runoff, stochastic suppression, or FARSITE execution in this experiment. Initially unburned cells remain unburned, and cells already extinguished at the start remain extinguished. A burning cell changes state only when cumulative deposition reaches its threshold.
+
+<a id="sec:method-grid"></a>
+
+## Spatial and Temporal Representation
+
+Let $\mathcal{C}$ be a rectangular grid with $N_r$ rows and $N_c$ columns. Cell width and height are $s_x$ and $s_y$ metres, respectively. The initial state of cell $c$ is $z_{c,0}\in\{0,1,2\}$, representing unburned, burning, and extinguished. The set of initially burning cells is
+$$
+\mathcal{B}=\{c\in\mathcal{C}:z_{c,0}=1\}.
+\tag{5}
+$$
+Only cells in $\mathcal{B}$ require suppression decision states in the optimisation; the other fire states are constants.
+
+Geographic inputs must use a projected coordinate reference system with metre units and a north-up, unrotated raster transform. Ignition polygons are reprojected into the landscape coordinate system. A cell is initially burning when the fraction of its area intersected by the union of ignition polygons is at least a specified threshold, set to $0.5$ in the standard configuration. Polygon intersections are used rather than a cell-centre inclusion rule. Input checks reject incompatible coordinates, missing shapefile components, invalid polygons, and unusable service locations.
+
+The horizon contains $W$ action intervals of duration $\Delta$ minutes, with state boundaries $t=0,\ldots,W$. An action beginning at boundary $t$ and lasting $R$ intervals occupies $[t,t+R)$ and completes at boundary $t+R$. Every selected action must complete by $W$. Distinguishing intervals from boundaries ensures that actions during the final interval have both a resource cost and a recorded fire-state consequence.
+
+<a id="sec:method-aircraft"></a>
+
+## Aircraft States and Movement
+
+Let $\mathcal{A}$ be the aircraft set. Aircraft $a$ has capacity $Q_a$ litres, speed $v_a$ metres per minute, and refill duration $R_a^{\mathrm{f}}$ intervals. Integer variables $r_{a,t}$ and $c_{a,t}$ specify its row and column, while $q_{a,t}$ is its integer water load. All aircraft start at the airfield $p_0$ with full capacity:
+$$
+(r_{a,0},c_{a,0})=p_0,
+    \qquad q_{a,0}=Q_a,
+    \qquad 0\leq q_{a,t}\leq Q_a.
+\tag{6}
+$$
+Tankers must return to the airfield at $W$. Scooper return is configurable; it is disabled in the standard landscape configuration and enabled in the controlled validation cases.
+
+The displacement charged during interval $t$ is
+<a id="eq:static-movement"></a>
+
+$$
+\ell_{a,t}
+    =s_y|r_{a,t+1}-r_{a,t}|
+    +s_x|c_{a,t+1}-c_{a,t}|,
+    \qquad \ell_{a,t}\leq v_a\Delta.
+\tag{7}
+$$
+Gurobi absolute-value constraints represent the two coordinate differences. The model can therefore allow movement across several cells in one interval without enumerating every possible origin–destination cell pair. At sampled boundaries, different aircraft cannot occupy the same cell except at the shared airfield.
+
+Equation [(7)](#eq:static-movement) constrains sampled displacement, not a continuous aircraft trajectory. Paths between boundaries are not reconstructed, and crossing paths between samples are not checked for separation. The model also imposes no turning-radius, altitude, terrain-avoidance, or no-fly-zone constraints. Integer positions have an additional consequence: when the permitted interval distance is smaller than both cell dimensions, an aircraft cannot move to another cell. Unused travel allowance does not accumulate across intervals.
+
+<a id="sec:method-actions"></a>
+
+## Drop and Refill Scheduling
+
+Let $d_{a,j,t}$ be binary and equal to one when aircraft $a$ begins a drop at initially burning origin $j\in\mathcal{B}$ at boundary $t$. Each drop discharges $D$ litres and lasts $R^{\mathrm{d}}$ intervals. A selected drop requires the aircraft to remain at $j$ throughout service, including its start and completion boundaries. Drop origins are restricted to cells that are still burning when the action begins; drops are not selected from arbitrary unburned grid locations.
+
+For aircraft $a$, let $\mathcal{S}_a$ contain its eligible refill locations. This is the airfield for a tanker and the configured water-source cells for a scooper. Binary $f_{a,s,t}$ selects a refill beginning at $s\in\mathcal{S}_a$. The aircraft remains at that site throughout its refill duration. Movement cannot take place during either service, and the sum of drop and refill actions active in any one aircraft interval is at most one.
+
+Let $u_{a,s,t}$ be the integer volume supplied by a refill. Its constraints are
+$$
+\begin{aligned}
+f_{a,s,t}\leq u_{a,s,t}&\leq Q_a f_{a,s,t},\\
+    f_{a,s,t}=1&\ \Longrightarrow\
+    u_{a,s,t}=Q_a-q_{a,t}.
+\end{aligned}
+\tag{8}
+$$
+The lower bound requires at least one litre for a selected refill, preventing a full aircraft from selecting an otherwise redundant zero-volume service. An unselected refill supplies no water.
+
+For every interval, water conservation is enforced by
+<a id="eq:static-water-balance"></a>
+
+$$
+\begin{split}
+    q_{a,t+1}={}&q_{a,t}-D\sum_{j\in\mathcal{B}}d_{a,j,t}\\
+    &+\sum_{s\in\mathcal{S}_a}
+    \sum_{\tau:\,\tau+R_a^{\mathrm{f}}=t+1}u_{a,s,\tau},
+\end{split}
+\tag{9}
+$$
+together with
+$$
+D\sum_{j\in\mathcal{B}}d_{a,j,t}\leq q_{a,t}.
+\tag{10}
+$$
+Only feasible action-start indices are included in these sums. Water is committed when a drop starts, so its deduction appears in the next boundary load; deposition on the fire is credited only at drop completion. Refill water becomes available at its completion boundary. These conventions prevent an aircraft from dropping water that is still being replenished or from restoring capacity merely by waiting.
+
+<a id="sec:method-deposition"></a>
+
+## Numerical Water Deposition
+
+The footprint is centred on the selected drop-origin cell. In local along-track and cross-track coordinates $(u,v)$, let $b=kh^{1.5}$ be its maximum width, $l_1$ the length of each tapered end, and $l_2$ its plateau length. The centred longitudinal width is
+$$
+\lambda(u)=b\min\!\left\{1,
+        \max\!\left[0,\frac{l_1+l_2/2-|u|}{l_1}\right]\right\}.
+\tag{11}
+$$
+The hexagon has total length $2l_1+l_2$ and lateral extent $|v|\leq\lambda(u)/2$. Since $\sigma(u)=\lambda(u)/6$, its sides truncate the lateral Gaussian at $\pm3\sigma(u)$.
+
+For points within the hexagon with positive width, the normalised deposition density is
+<a id="eq:static-density"></a>
+
+$$
+\rho(u,v)=\frac{\lambda(u)}{Z}
+    \frac{1}{\sqrt{2\pi}\sigma(u)}
+    \exp\!\left[-\frac{v^2}{2\sigma(u)^2}\right],
+\tag{12}
+$$
+with zero density outside it and normalising constant
+$$
+Z=b(l_1+l_2)\operatorname{erf}\!\left(\frac{3}{\sqrt{2}}\right).
+\tag{13}
+$$
+This normalisation accounts for both the longitudinal profile and lateral truncation. The heading rotates the centred footprint in east–north coordinates and is specified clockwise from north.
+
+For origin $j$, let $H_j$ be its translated and rotated hexagon and $P_c$ the polygon of cell $c$. The credited water coefficient is
+<a id="eq:static-deposition"></a>
+
+$$
+F_{j,c}=\left\lfloor
+        D\int_{P_c\cap H_j}\rho_j(x,y)\,\mathrm{d}x\,\mathrm{d}y
+    \right\rfloor.
+\tag{14}
+$$
+The lateral integral is evaluated using the normal cumulative distribution function. Adaptive quadrature evaluates the remaining along-track integral, split at polygon vertices and profile breakpoints. Geometric intersections define the integration domain; numerical integration then determines its mass. Coefficients are computed before model construction and are constants within the optimisation.
+
+Rounding down to whole litres ensures conservative credit, with
+$$
+F_{j,c}\geq0,
+    \qquad\sum_{c\in\mathcal{C}}F_{j,c}\leq D.
+\tag{15}
+$$
+Water outside the raster and sub-litre remainders are not redistributed. Water deposited on an unburned cell is recorded during replay but does not extinguish an initially burning cell elsewhere. Consequently, the volume consumed by the aircraft need not equal the volume useful for suppression.
+
+<a id="sec:method-suppression"></a>
+
+## Deterministic Suppression
+
+Let $\alpha$ be a specified suppression demand in litres per square metre. The uniform cell threshold is
+$$
+\theta=\left\lceil\alpha s_xs_y\right\rceil.
+\tag{16}
+$$
+This is a demonstration parameter, not a suppression law calibrated to fuel, fireline intensity, weather, or aircraft performance. The standard value $\alpha=1$ gives $\theta=900$ litres on a $30\times30$ m cell. Controlled cases use different thresholds to isolate particular accounting behaviours.
+
+For $c\in\mathcal{B}$, cumulative delivered water $L_{c,t}$ evolves as
+$$
+L_{c,0}=0,
+    \qquad
+    L_{c,t}=L_{c,t-1}
+    +\sum_{a\in\mathcal{A}}\sum_{j\in\mathcal{B}}
+    \sum_{\tau:\,\tau+R^{\mathrm{d}}=t}F_{j,c}d_{a,j,\tau}.
+\tag{17}
+$$
+Binary $E_{c,t}$ indicates whether the initially burning cell has been extinguished. The initial condition is $E_{c,0}=0$, and the threshold is imposed in both directions:
+$$
+\begin{aligned}
+E_{c,t}=1&\ \Longrightarrow\ L_{c,t}\geq\theta,\\
+    E_{c,t}=0&\ \Longrightarrow\ L_{c,t}\leq\theta-1,\\
+    E_{c,t}&\geq E_{c,t-1}.
+\end{aligned}
+\tag{18}
+$$
+Although cumulative-water variables are continuous in the model, their increments are sums of integer coefficients multiplied by binary decisions. The whole-litre threshold therefore permits an exact logical distinction without an arbitrary epsilon gap. Multiple partial deposits accumulate, extinguishment is absorbing, and insufficient water cannot cause a cell to disappear. A drop may begin at $j$ only if
+$$
+d_{a,j,t}\leq1-E_{j,t}.
+\tag{19}
+$$
+
+<a id="sec:method-solver"></a>
+
+## Objective Hierarchy and Solver Procedure
+
+The primary objective is
+<a id="eq:static-primary"></a>
+
+$$
+\min B,
+    \qquad B=\sum_{t=1}^{W}\sum_{c\in\mathcal{B}}(1-E_{c,t}).
+\tag{20}
+$$
+The initial boundary is excluded because it is fixed, and the final boundary is included so that terminal suppression matters. Multiplication by $\Delta$ gives burning cell-minutes. This sampled burden is neither the number of newly burned cells nor the time until the final drop. It can improve when only part of the initial fire is extinguished.
+
+After the first solve, let $\widehat B$ be the best incumbent value. The second solve adds $B\leq\widehat B$ and minimises
+<a id="eq:static-secondary"></a>
+
+$$
+\min\sum_{a\in\mathcal{A}}\sum_{t=0}^{W-1}\ell_{a,t}.
+\tag{21}
+$$
+When the first solve proves optimality, this is a lexicographic minimisation of burning cell-steps and then distance. When it times out, the distance stage preserves the best known primary value but does not establish that value's global optimality. Distance is measured in metres and is not interchangeable with total flight time for a heterogeneous fleet.
+
+The stages share a configured solver-time budget, with $80\%$ initially allocated to the primary stage and the unused remainder available to the secondary stage. The requested relative MIP gap is zero. A parked, fully loaded fleet with no actions supplies a feasible initial schedule. Because suppression is an objective rather than a requirement to extinguish every cell, even an ineffective parked solution can be feasible. Controlled cases use a 30 s budget, seed 42, and one solver thread. The standard landscape configuration allows 500 s and automatic thread selection.
+
+The combined status is `OPTIMAL` only when both stages finish optimally. Otherwise, a returned incumbent is labelled `FEASIBLE`. Without an incumbent, objective values are left undefined rather than reported as zero. Solver statuses, the primary lower bound, remaining gaps, model dimensions, and elapsed solve time are stored with the extracted schedule. If infeasibility is established and an output directory is available, an irreducible inconsistent subsystem is also written for diagnosis.
+
+<a id="sec:method-replay"></a>
+
+## Independent Replay and Reproducibility
+
+The replay procedure reads the extracted routes and actions without querying the solver's decision variables. It checks complete boundary coverage, integer coordinates and loads, grid limits, starting conditions, return requirements, displacement limits, and sampled occupancy. It also verifies action durations and locations, stationary service, non-overlapping actions, drop volumes, refill quantities, and water conservation at every boundary.
+
+The fire history is then reconstructed by applying deposition events at their completion times. Replayed extinguished cells must match the optimiser's prediction at every boundary, and independently recomputed burning cell-steps and distance must match the reported objectives. This provides a second implementation of schedule accounting. It is not a fully independent physical model: replay and optimisation share the scenario, fleet definitions, and precomputed deposition coefficients. Separate geometry tests and analytically constructed cases are therefore needed to check assumptions that replay alone could reproduce incorrectly.
+
+The standard runner saves scenario metadata, solver results, initial and final georeferenced fire grids, replay arrays, and a visual summary. The controlled validation runner stores the expected answer, scenario parameters, actual result, comparison report, model export, solver log, and replay arrays for each case. Unique run directories preserve previous experiments. Drop variables scale with aircraft count, initially burning origins, and horizon length, while pairwise sampled occupancy grows with the square of aircraft count. Avoiding all-grid-cell route-pair enumeration reduces construction overhead, but does not remove the combinatorial difficulty of the scheduling problem.
+
+<a id="ch:static-validation"></a>
+
+# Static Validation and Results
+
+<a id="sec:validation-strategy"></a>
+
+## Verification Strategy
+
+Verification proceeds at three levels. Independent replay checks whether an extracted schedule obeys the implemented rules. Controlled examples check whether the optimiser finds a known optimum. Broader regression and geographic tests address edge cases that a single successful schedule cannot exercise. This distinguishes internal consistency, optimisation correctness on tractable instances, and suitability for operational wildfire modelling.
+
+The five controlled cases use the production static model and numerical deposition functions rather than a simplified replacement solver. Their expected values are stored separately from scenario generation, and routes or action decisions are not fixed in advance. Each case must pass replay and match the expected route, water history, action intervals, fire history, and objectives. Both optimisation stages must report `OPTIMAL`; a feasible schedule with an unproven optimum does not pass the complete comparison.
+
+<a id="sec:validation-configuration"></a>
+
+## Controlled Experimental Configuration
+
+All five cases use a synthetic $3\times3$ grid with $100\times100$ m cells and one-minute intervals. Coordinates are zero-based $(\mathrm{row},\mathrm{column})$. The airfield is $(1,0)$ and the only burning cell is $(1,1)$, exactly 100 m away. Each case contains one aircraft and requires its return to the airfield. In the scooper case, the water source is also at $(1,0)$; this deliberately isolates refill duration from differences in source location.
+
+Aircraft speed is 100 m/min except in the unreachable case, where it is 50 m/min. A drop discharges 5,000 litres and takes one stationary interval. Tanker refilling takes two intervals and scooper refilling one. Aircraft start full. The single-drop and two-drop cases use a 10,000-litre tanker, while the refill cases use a 5,000-litre aircraft.
+
+The footprint parameters are $k=0.05$, $h=40$ m, $l_1=20$ m, $l_2=40$ m, and heading $0^\circ$. The resulting hexagon is 80 m long and approximately 12.65 m wide, so it lies entirely within the target cell. The recorded run credits 5,000 litres per drop to that cell. The acceptance check permits 4,999–5,000 litres to accommodate conservative numerical rounding. Thresholds of 2,500 or 7,500 litres remain separated from that rounding uncertainty: one drop suffices for the former, while two are required for the latter. They correspond to $\alpha=0.25$ and $0.75$ litres/m$^2$, respectively.
+
+<a id="sec:validation-cases"></a>
+
+## Individual Validation Cases
+
+### Single Drop
+The aircraft starts with 10,000 litres and the fire requires 2,500 litres. It travels during minutes 0–1, drops during 1–2, and returns during 2–3. The fire is still burning at minute 1 and extinguished at minute 2, giving one burning cell-step. Total distance is $100+100=200$ m, and the final load is 5,000 litres. Since the aircraft cannot reach the target before minute 1 and the drop requires a further interval, suppression before minute 2 is impossible. This case verifies basic travel, service occupancy, suppression timing, return, and water deduction.
+
+### Two Accumulated Drops
+Capacity remains 10,000 litres, but the threshold increases to 7,500 litres and the horizon to four intervals. After travelling during minutes 0–1, the aircraft drops during 1–2 and 2–3, then returns during 3–4. The first deposit is insufficient, while the second crosses the threshold. The expected result is two burning cell-steps, 200 m travel, extinction at minute 3, and an empty aircraft at the end. This verifies cumulative suppression and prevents the model from treating every completed drop as automatic extinguishment.
+
+### Tanker Refill
+Tanker capacity is reduced to 5,000 litres while the demand remains 7,500 litres. The earliest possible sequence is travel during 0–1, drop during 1–2, return during 2–3, refill during 3–5, travel during 5–6, drop during 6–7, and return during 7–8. Extinction occurs at minute 7, giving six burning cell-steps and 400 m total travel. The final load is zero. The empty tanker cannot begin its second drop without returning and completing the two-interval refill. This verifies capacity exhaustion, source restrictions, refill completion, and the absence of water creation while waiting.
+
+### Scooper Refill
+The aircraft is changed to a 5,000-litre scooper with a one-interval refill. The sequence is travel during 0–1, drop during 1–2, return to the source during 2–3, refill during 3–4, travel during 4–5, drop during 5–6, and return during 6–7. The expected result is extinction at minute 6, five burning cell-steps, 400 m travel, and zero final water. Comparison with the tanker case isolates the one-interval difference in refill service and confirms that the aircraft types follow their respective parameters.
+
+### Unreachable Fire
+The single-drop configuration is retained, but speed is reduced to 50 m/min. Every move to a distinct grid cell requires at least 100 m, exceeding the permitted interval displacement. The aircraft therefore remains at the airfield throughout the three-interval horizon. No drop occurs, distance is zero, the initial 10,000 litres remain aboard, and the fire remains burning at all sampled boundaries. The correct primary objective is three burning cell-steps. The expected persistence of the fire makes this a successful negative control: it verifies that suppression cannot occur without delivery and that the movement limit is not rounded up to one cell.
+
+<a id="sec:validation-outcomes"></a>
+
+## Expected and Recorded Outcomes
+
+The expected objectives follow from the earliest feasible suppression times and the minimum travel needed to execute the required drops and return. Tight horizons leave no spare intervals in the successful cases, fixing their boundary routes and water histories. The unreachable case has no feasible movement. Thus the comparisons test more than an arbitrary schedule produced by the solver.
+
+The saved all-case run dated 15 October 2026 records a successful comparison for all five cases. Every result has both stages marked `OPTIMAL`, passes independent replay, and has no recorded comparison mismatch. Table [1](#tab:controlled-results) reports the observed values; these equal the independently specified expectations.
+
+<a id="tab:controlled-results"></a>
+
+**Table 1.** Controlled static validation: expected values matched by the recorded run. $B$ denotes burning cell-steps; time is measured from the start.
+
+| Case | $W$ | $B$ | Distance (m) | Fire out (min) | Result |
+| --- | --- | --- | --- | --- | --- |
+| Single drop | 3 | 1 | 200 | 2 | Pass |
+| Two drops | 4 | 2 | 200 | 3 | Pass |
+| Tanker refill | 8 | 6 | 400 | 7 | Pass |
+| Scooper refill | 7 | 5 | 400 | 6 | Pass |
+| Unreachable | 3 | 3 | 0 | — | Pass |
+
+The first four cases end with one extinguished and eight unburned cells. The unreachable case ends with one burning and eight unburned cells. Recorded solve times for these five instances are below 0.02 s each, excluding model construction. These measurements describe this saved run only; they do not establish a general runtime guarantee or predict the difficulty of a larger fire.
+
+<a id="sec:validation-regression"></a>
+
+## Regression and Geographic Checks
+
+The controlled cases are supplemented by automated checks in the static and geographic test suites. These include the following behaviours:
+- With no aircraft, or with drops disabled, burning cells cannot disappear and a parked fleet has zero travel.
+- Several aircraft can share the airfield, while sampled occupancy elsewhere remains exclusive.
+- Drops completing at the final boundary still consume water and affect the final fire state; a longer drop duration delays deposition accordingly.
+- Consecutive drops cannot exceed available water, and a scooper cannot restore its load without an explicit refill service.
+- Partial drops accumulate, source-to-target deposition is not reversed, existing extinguished cells remain extinguished, and unburned cells remain unburned.
+- Empty-fire instances have zero burning burden, and a model without a feasible incumbent does not report zero-valued objectives as a valid solution.
+- A deliberately corrupted load history is rejected by replay.
+- Footprint orientation, centre-cell coverage, coarse-cell integration, and boundary losses obey their expected properties. Water clipped outside the raster is not redistributed.
+- Invalid service locations and incompatible geographic inputs are rejected, and saved geographic grids preserve coordinate reference system, transform, dimensions, and state values.
+
+The earlier implementation record dated 1 October 2026 reports 25 passing automated checks, including small Gurobi solves. This is a historical test record, separate from the saved five-case validation run. In particular, the test fixture can skip solver checks when Gurobi or its licence is unavailable, so any later test report must distinguish passing cases from skipped cases.
+
+A separate $5\times5$ demonstration with 30 m cells and two tankers plus one scooper also has a recorded optimal solution: one burning cell-step, 120 m travel, and no fire remaining. Its shorter distance than a tanker return route is consistent with scooper return being disabled in that demonstration. It should not be confused with the 100 m-cell controlled single-drop case, where return is required and travel is 200 m.
+
+<a id="sec:validation-landscape"></a>
+
+## Full-Landscape Experiment
+
+The bundled landscape contains $82\times230$ cells at 30 m resolution. Polygon rasterisation identifies 960 initially burning cells and 17,900 unburned cells. The experiment uses a 15-minute horizon, two 10,000-litre tankers, one 5,000-litre scooper, and 5,000-litre drops. Tanker and scooper speed limits are 10,000 and 6,000 m/min, respectively; these are specified model inputs rather than validated operating speeds. The airfield is $(0,0)$ and scooper water-source cells are $(0,229)$ and $(81,0)$. These locations are experimental placeholders. The deposition heading is $45^\circ$ and the suppression demand is 900 litres per cell.
+
+The recorded model contains 74,693 variables, including 58,951 binary variables, 74,643 linear constraints, and 29,442 general constraints. Two saved full-landscape runs dated 1 October 2026 use configured solver budgets of 60 s and 500 s. Their logs identify Gurobi 13.0.0 on Windows with an Intel Core i7-13620H processor. Both return replay-validated incumbents, but neither proves primary optimality. The measured outcomes are given in Table [2](#tab:landscape-results).
+
+<a id="tab:landscape-results"></a>
+
+**Table 2.** Recorded full-landscape incumbents. Budget is the configured solver allowance; elapsed time excludes model construction. Neither run proves the complete objective hierarchy optimal.
+
+| Budget (s) | Elapsed (s) | $B$ | Distance (m) | Cells out | Primary gap |
+| --- | --- | --- | --- | --- | --- |
+| 60 | 48.87 | 14,400 | 0 | 0 | 6.78% |
+| 500 | 497.56 | 14,274 | 51,660 | 16 | 5.46% |
+
+With no suppression, the burden is $960\times15=14{,}400$ burning cell-steps. The shorter run retains this parked baseline: its primary stage reaches the time limit, and its secondary stage proves that zero travel is optimal under the retained primary cap. This does not establish that avoiding suppression is globally optimal, because the primary objective remains unproven.
+
+The longer run performs 12 drops and extinguishes 16 cells by the final boundary, leaving 944 burning cells. The number extinguished can exceed the number of drops because a footprint can affect several cells. Its burden of 14,274 is 126 cell-steps below the unsuppressed baseline, an improvement of approximately $0.88\%$. Both stages reach their time limits. The saved primary lower bound is 13,495 cell-steps, giving a remaining primary gap of approximately $5.46\%$ relative to the returned incumbent. The secondary gap is also unresolved, so the 51,660 m route is not established as the minimum distance for the best primary value. Both full-landscape results are consequently labelled `FEASIBLE`.
+
+An earlier implementation note records a size-limited licence preventing a full solve in another environment. The saved full-landscape logs provide evidence of subsequent runs that did execute, and are the basis for the values reported here. They do not establish the licence available in every environment. The two budgets also represent individual runs, not a replicated timing study, and should not be used to infer a general relationship between runtime and solution quality.
+
+<a id="sec:validation-reproduction"></a>
+
+## Reproduction Procedure
+
+From the `integration/static_v3` directory, using a Python environment with the project dependencies and an appropriate Gurobi licence, the controlled expectations and experiments can be reproduced with:
+```powershell
+python validation_cases/run_validation.py --expected-only
+python validation_cases/run_validation.py --case single_drop
+python validation_cases/run_validation.py
+```
+The first command displays the expected answers without importing the model dependencies or solving. The second runs the basic case, and the third runs all five. A fully successful all-case comparison ends with `5/5 cases passed.` Failures produce a nonzero exit status and a saved explanation. Each case has a 30 s solver allowance; dependency or licence failures are distinct from an incorrect computed schedule.
+
+The broader regression suite, small demonstration, and full landscape can be invoked with:
+```powershell
+python -m pytest tests
+python run_static.py --demo
+python run_static.py --build-only
+python run_static.py --time-limit 500
+```
+The build-only command constructs the standard model without optimising it. Controlled outputs are saved below `validation_cases/outputs/`, while standard runs are saved below `outputs/`. Scenario files must be retained with results because command-line settings can differ from the current defaults. Solver status, validation status, and expected-value comparison should be inspected together rather than inferring success from a plot or from the existence of an output file.
+
+<a id="sec:validation-limitations"></a>
+
+## Interpretation and Limitations
+
+The five successful cases establish that the implemented optimiser can recover independently known answers for isolated movement, deposition, capacity, refill, and reachability conditions. Replay and regression checks strengthen confidence in action accounting and geographic consistency. They do not establish physical suppression effectiveness, continuous flight feasibility, multi-aircraft tactical safety, or correctness of a coupled FARSITE simulation.
+
+The static fire assumption removes growth while aircraft are travelling, and the cumulative-water threshold omits fuel-specific demand, changing fire intensity, evaporation, and recovery after partial wetting. Service intervals hold the aircraft stationary at a grid location, so a drop is represented as a scheduling action rather than a moving release trajectory. Manhattan displacement and sampled occupancy are similarly discretisation choices whose operational consequences require further evaluation.
+
+The full-landscape results demonstrate construction of the larger model and production of feasible schedules, but the remaining primary and secondary gaps limit conclusions about solution quality. In particular, the modest reduction in burning cell-steps cannot establish fleet sufficiency, operational effectiveness, or computational readiness for live deployment. Further work should combine replicated computational experiments, sensitivity to cell size and timestep, physically calibrated deposition and suppression data, and explicit validation of the rolling-horizon interface. This preserves the role of the static experiment as a verified foundation for dynamic integration rather than treating it as a complete wildfire-response simulation.

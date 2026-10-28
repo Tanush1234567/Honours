@@ -1,0 +1,67 @@
+\chapter{Literature Review}
+\label{ch:literature}
+
+This chapter reviews the literature underpinning the three components of the framework developed in this dissertation: how fire spread is modelled (Section~\ref{sec:lit-fire-propagation}), how water drops interact with a fire and with aircraft flight (Section~\ref{sec:lit-water-dynamics}), and how aircraft routing and suppression decisions are formulated as an optimisation problem (Section~\ref{sec:lit-optimisation}). Each section closes by connecting the reviewed material directly to the scope of the static implementation.
+
+\section{Fire Propagation}
+\label{sec:lit-fire-propagation}
+
+Wildfire spread models include continuous, geometry-based representations of a fire perimeter and discrete, cell-based event representations. These approaches provide different interfaces through which a suppression model may interact with the fire.
+
+\textbf{FARSITE.} FARSITE \cite{finney1998farsite} simulates two-dimensional fire growth by treating points on the current fire perimeter as sources of expanding elliptical wavelets, following Huygens' principle. The advancing perimeter is obtained from the envelope of these wavelets. Local fuel, terrain, and weather conditions determine the rate and direction of spread, using the Rothermel surface fire spread equation,
+\begin{equation}
+    R = \frac{I_R\,\xi\,(1+\phi_w+\phi_s)}{\rho_b\,\varepsilon\,Q_{ig}},
+\end{equation}
+where $I_R$ is reaction intensity, $\xi$ is the propagating flux ratio, $\phi_w$ and $\phi_s$ are wind and slope coefficients, $\rho_b$ is bulk density, $\varepsilon$ is the effective heating number, and $Q_{ig}$ is the heat of pre-ignition. This provides a physically informed basis for propagating the fire. A coupling to the present optimisation framework must additionally translate scheduled water delivery into changes that can be passed back to the fire spread calculation; the cumulative-water rule developed here is a separate modelling component.
+
+\textbf{DEVS.} DEVS-FIRE \cite{hu2012devsfire} represents fire behaviour through interacting discrete-event cells. Cells exchange information with neighbouring cells, and suppression can be represented through external events that alter their state. The distinction between fire evolution and externally applied suppression is particularly useful for decision support, since an aircraft schedule can be translated into a sequence of events acting on a spatial fire representation.
+
+\textbf{Positioning.} The present framework adopts a three-state grid representation inspired by this separation between fire state and suppression events. The static implementation does not reproduce DEVS-FIRE's full state space or neighbour-to-neighbour propagation. Instead, it deliberately holds the initially burning set fixed and allows only water-driven transitions from burning to extinguished. The landscape raster supplies spatial dimensions and georeferencing, while ignition polygons identify the initial burning cells. Terrain and fuel values do not drive spread or suppression in this experiment. This isolates the correctness of routing and water accounting before introducing the additional uncertainty and feedback associated with FARSITE coupling.
+
+\section{Water Dynamics}
+\label{sec:lit-water-dynamics}
+
+\textbf{Water release process and flight constraints.} \citet{liu2025hierarchical} distinguish arrival, release, and departure when modelling the water-release process. Aircraft speed, turning behaviour, release conditions, and terrain clearance influence whether a planned drop can be executed. These considerations motivate a distinction between a routing schedule and a physically executable aircraft trajectory.
+
+The present optimisation model adopts a simpler movement representation: aircraft occupy integer grid coordinates, and the displacement between successive boundaries is limited by a Manhattan-distance speed bound. Speed is constant for each aircraft type rather than varying with water load or flight phase. Bank-angle-limited turns, climb trajectories, terrain clearance, and continuous flight during release are outside the static formulation. Their evaluation is reserved for a subsequent simulation layer.
+
+\textbf{Drop pattern.} The water-dispersion representation follows the hexagonal footprint and Gaussian lateral profile discussed by \citet{liu2025hierarchical}. Let $x$ measure distance along the footprint from its leading end. With release height $h$, width coefficient $k$, tapered-end length $l_1$, and central plateau length $l_2$, the longitudinal width is
+\begin{equation}
+    \lambda(x,h) =
+    \begin{cases}
+        k h^{1.5}\,x/l_1, & 0 \leq x < l_1, \\[3pt]
+        k h^{1.5}, & l_1 \leq x \leq l_1+l_2, \\[3pt]
+        k h^{1.5}\,(2l_1+l_2-x)/l_1, & l_1+l_2 < x \leq 2l_1+l_2, \\[3pt]
+        0, & \text{otherwise}.
+    \end{cases}
+\end{equation}
+For positive width, the lateral profile takes the form
+\begin{equation}
+    \eta(x,y) = \frac{\lambda(x,h)}{\sqrt{2\pi\sigma(x,h)^2}}
+    \exp\!\left(-\frac{y^2}{2\sigma(x,h)^2}\right),
+    \qquad \sigma(x,h)=\lambda(x,h)/6.
+\end{equation}
+Here the hexagon limits the lateral support to three standard deviations on either side of its centreline.
+
+\textbf{Positioning.} The static implementation retains this footprint geometry but converts the profile into a normalised deposition density integrated over each raster cell. A density evaluated at a cell centre is not itself a deposited volume or an extinguishment probability. The numerical integration, normalisation, and conservative conversion into integer litres are therefore explicit parts of the methodology. Grid resolution is taken from the input raster or specified for a synthetic experiment; it is not automatically selected from the footprint's standard deviation. The heading is a deterministic input measured clockwise from north, and neither wind direction nor heading is sampled stochastically within the static experiment.
+
+\section{Optimisation}
+\label{sec:lit-optimisation}
+
+\textbf{AFFVRP.} \citet{chalabi2024affvrp} formulate aerial firefighting as a capacitated, multi-trip routing problem with heterogeneous tankers and scoopers. Airfields, water bodies, and fire demands determine the routing structure. Their hierarchical objective first minimises the time of the latest drop and then total flight time. Splitting a fire into drop-sized demands makes aircraft capacity and repeated visits central to the formulation.
+
+The present model retains heterogeneous capacity and aircraft-specific refill locations, but expresses decisions through grid positions and action intervals rather than arcs between a predefined set of service nodes. A drop can affect several cells, and a cell can receive water from several drops before reaching its suppression threshold. Consequently, arriving at a target does not automatically extinguish it, and target demand is not reduced to a single compulsory visit.
+
+\textbf{Drone relief routing.} Payload-constrained humanitarian routing provides a related perspective on the connection between vehicle movement and the material being delivered \cite{rabta2018drone}. A representative payload-dependent arc cost is
+\begin{equation}
+    R_{ij}(w) = \gamma_0 + \gamma w_{ij}
+    + \delta_{ij}\left(\rho_0 + \rho w_{ij}\right),
+\end{equation}
+where $w_{ij}$ is the payload carried along an arc, $\delta_{ij}$ is distance, and the remaining coefficients describe fixed and payload-dependent costs. Such models emphasise that a route must remain consistent with the vehicle's available resources at every stage.
+
+\textbf{Positioning.} The corresponding conserved resource here is water. Each aircraft has an integer load in litres, explicit drop consumption, and an explicit refill completion event. Waiting or reaching a source does not restore water automatically. The current formulation does not include payload-dependent fuel consumption, energy constraints, or fire-priority time windows. Its temporal restrictions arise from the finite horizon, speed limits, and service durations. The primary objective is burning cell-steps, followed by actual Manhattan travel distance, rather than either a weighted combination of objectives or the original AFFVRP's time-to-last-drop hierarchy.
+
+\section{Synthesis}
+\label{sec:lit-synthesis}
+
+Taken together, this review positions the present work as a synthesis of spatial fire-state representation, numerical water deposition, and resource-constrained aircraft routing. The static experiment makes the interaction between these components deterministic and inspectable. Its purpose is to establish that scheduled actions consume the correct amount of water, deliver it to the correct cells at the correct time, and induce the corresponding fire-state changes. Physical calibration and dynamic fire propagation remain separate requirements. This distinction provides a basis for extending the framework without attributing the behaviour of a coupled wildfire simulation to a routing model that has only been verified in isolation.

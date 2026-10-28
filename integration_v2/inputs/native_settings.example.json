@@ -1,0 +1,12 @@
+{
+  "temperature_f": 85.0,
+  "humidity_pct": 25.0,
+  "elevation_ft": 1500.0,
+  "cloud_pct": 0.0,
+  "fuel_moistures": [6, 7, 8, 60, 90],
+  "timestep_minutes": 1.0,
+  "distance_resolution_m": 15.0,
+  "perimeter_resolution_m": 15.0,
+  "acceleration_on": true,
+  "minimum_forecast_minutes": 60.0
+}

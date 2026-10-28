@@ -1,0 +1,144 @@
+\chapter{Static Validation and Results}
+\label{ch:static-validation}
+
+\section{Verification Strategy}
+\label{sec:validation-strategy}
+
+Verification proceeds at three levels. Independent replay checks whether an extracted schedule obeys the implemented rules. Controlled examples check whether the optimiser finds a known optimum. Broader regression and geographic tests address edge cases that a single successful schedule cannot exercise. This distinguishes internal consistency, optimisation correctness on tractable instances, and suitability for operational wildfire modelling.
+
+The five controlled cases use the production static model and numerical deposition functions rather than a simplified replacement solver. Their expected values are stored separately from scenario generation, and routes or action decisions are not fixed in advance. Each case must pass replay and match the expected route, water history, action intervals, fire history, and objectives. Both optimisation stages must report \texttt{OPTIMAL}; a feasible schedule with an unproven optimum does not pass the complete comparison.
+
+\section{Controlled Experimental Configuration}
+\label{sec:validation-configuration}
+
+All five cases use a synthetic $3\times3$ grid with $100\times100$ m cells and one-minute intervals. Coordinates are zero-based $(\mathrm{row},\mathrm{column})$. The airfield is $(1,0)$ and the only burning cell is $(1,1)$, exactly 100 m away. Each case contains one aircraft and requires its return to the airfield. In the scooper case, the water source is also at $(1,0)$; this deliberately isolates refill duration from differences in source location.
+
+Aircraft speed is 100 m/min except in the unreachable case, where it is 50 m/min. A drop discharges 5,000 litres and takes one stationary interval. Tanker refilling takes two intervals and scooper refilling one. Aircraft start full. The single-drop and two-drop cases use a 10,000-litre tanker, while the refill cases use a 5,000-litre aircraft.
+
+The footprint parameters are $k=0.05$, $h=40$ m, $l_1=20$ m, $l_2=40$ m, and heading $0^\circ$. The resulting hexagon is 80 m long and approximately 12.65 m wide, so it lies entirely within the target cell. The recorded run credits 5,000 litres per drop to that cell. The acceptance check permits 4,999--5,000 litres to accommodate conservative numerical rounding. Thresholds of 2,500 or 7,500 litres remain separated from that rounding uncertainty: one drop suffices for the former, while two are required for the latter. They correspond to $\alpha=0.25$ and $0.75$ litres/m$^2$, respectively.
+
+\section{Individual Validation Cases}
+\label{sec:validation-cases}
+
+\subsection{Single Drop}
+
+The aircraft starts with 10,000 litres and the fire requires 2,500 litres. It travels during minutes 0--1, drops during 1--2, and returns during 2--3. The fire is still burning at minute 1 and extinguished at minute 2, giving one burning cell-step. Total distance is $100+100=200$ m, and the final load is 5,000 litres. Since the aircraft cannot reach the target before minute 1 and the drop requires a further interval, suppression before minute 2 is impossible. This case verifies basic travel, service occupancy, suppression timing, return, and water deduction.
+
+\subsection{Two Accumulated Drops}
+
+Capacity remains 10,000 litres, but the threshold increases to 7,500 litres and the horizon to four intervals. After travelling during minutes 0--1, the aircraft drops during 1--2 and 2--3, then returns during 3--4. The first deposit is insufficient, while the second crosses the threshold. The expected result is two burning cell-steps, 200 m travel, extinction at minute 3, and an empty aircraft at the end. This verifies cumulative suppression and prevents the model from treating every completed drop as automatic extinguishment.
+
+\subsection{Tanker Refill}
+
+Tanker capacity is reduced to 5,000 litres while the demand remains 7,500 litres. The earliest possible sequence is travel during 0--1, drop during 1--2, return during 2--3, refill during 3--5, travel during 5--6, drop during 6--7, and return during 7--8. Extinction occurs at minute 7, giving six burning cell-steps and 400 m total travel. The final load is zero. The empty tanker cannot begin its second drop without returning and completing the two-interval refill. This verifies capacity exhaustion, source restrictions, refill completion, and the absence of water creation while waiting.
+
+\subsection{Scooper Refill}
+
+The aircraft is changed to a 5,000-litre scooper with a one-interval refill. The sequence is travel during 0--1, drop during 1--2, return to the source during 2--3, refill during 3--4, travel during 4--5, drop during 5--6, and return during 6--7. The expected result is extinction at minute 6, five burning cell-steps, 400 m travel, and zero final water. Comparison with the tanker case isolates the one-interval difference in refill service and confirms that the aircraft types follow their respective parameters.
+
+\subsection{Unreachable Fire}
+
+The single-drop configuration is retained, but speed is reduced to 50 m/min. Every move to a distinct grid cell requires at least 100 m, exceeding the permitted interval displacement. The aircraft therefore remains at the airfield throughout the three-interval horizon. No drop occurs, distance is zero, the initial 10,000 litres remain aboard, and the fire remains burning at all sampled boundaries. The correct primary objective is three burning cell-steps. The expected persistence of the fire makes this a successful negative control: it verifies that suppression cannot occur without delivery and that the movement limit is not rounded up to one cell.
+
+\section{Expected and Recorded Outcomes}
+\label{sec:validation-outcomes}
+
+The expected objectives follow from the earliest feasible suppression times and the minimum travel needed to execute the required drops and return. Tight horizons leave no spare intervals in the successful cases, fixing their boundary routes and water histories. The unreachable case has no feasible movement. Thus the comparisons test more than an arbitrary schedule produced by the solver.
+
+The saved all-case run dated 15 October 2026 records a successful comparison for all five cases. Every result has both stages marked \texttt{OPTIMAL}, passes independent replay, and has no recorded comparison mismatch. Table~\ref{tab:controlled-results} reports the observed values; these equal the independently specified expectations.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Controlled static validation: expected values matched by the recorded run. $B$ denotes burning cell-steps; time is measured from the start.}
+\label{tab:controlled-results}
+\begin{tabular}{lrrrrl}
+\hline
+Case & $W$ & $B$ & Distance (m) & Fire out (min) & Result \\
+\hline
+Single drop & 3 & 1 & 200 & 2 & Pass \\
+Two drops & 4 & 2 & 200 & 3 & Pass \\
+Tanker refill & 8 & 6 & 400 & 7 & Pass \\
+Scooper refill & 7 & 5 & 400 & 6 & Pass \\
+Unreachable & 3 & 3 & 0 & --- & Pass \\
+\hline
+\end{tabular}
+\end{table}
+
+The first four cases end with one extinguished and eight unburned cells. The unreachable case ends with one burning and eight unburned cells. Recorded solve times for these five instances are below 0.02 s each, excluding model construction. These measurements describe this saved run only; they do not establish a general runtime guarantee or predict the difficulty of a larger fire.
+
+\section{Regression and Geographic Checks}
+\label{sec:validation-regression}
+
+The controlled cases are supplemented by automated checks in the static and geographic test suites. These include the following behaviours:
+\begin{itemize}
+    \item With no aircraft, or with drops disabled, burning cells cannot disappear and a parked fleet has zero travel.
+    \item Several aircraft can share the airfield, while sampled occupancy elsewhere remains exclusive.
+    \item Drops completing at the final boundary still consume water and affect the final fire state; a longer drop duration delays deposition accordingly.
+    \item Consecutive drops cannot exceed available water, and a scooper cannot restore its load without an explicit refill service.
+    \item Partial drops accumulate, source-to-target deposition is not reversed, existing extinguished cells remain extinguished, and unburned cells remain unburned.
+    \item Empty-fire instances have zero burning burden, and a model without a feasible incumbent does not report zero-valued objectives as a valid solution.
+    \item A deliberately corrupted load history is rejected by replay.
+    \item Footprint orientation, centre-cell coverage, coarse-cell integration, and boundary losses obey their expected properties. Water clipped outside the raster is not redistributed.
+    \item Invalid service locations and incompatible geographic inputs are rejected, and saved geographic grids preserve coordinate reference system, transform, dimensions, and state values.
+\end{itemize}
+The earlier implementation record dated 1 October 2026 reports 25 passing automated checks, including small Gurobi solves. This is a historical test record, separate from the saved five-case validation run. In particular, the test fixture can skip solver checks when Gurobi or its licence is unavailable, so any later test report must distinguish passing cases from skipped cases.
+
+A separate $5\times5$ demonstration with 30 m cells and two tankers plus one scooper also has a recorded optimal solution: one burning cell-step, 120 m travel, and no fire remaining. Its shorter distance than a tanker return route is consistent with scooper return being disabled in that demonstration. It should not be confused with the 100 m-cell controlled single-drop case, where return is required and travel is 200 m.
+
+\section{Full-Landscape Experiment}
+\label{sec:validation-landscape}
+
+The bundled landscape contains $82\times230$ cells at 30 m resolution. Polygon rasterisation identifies 960 initially burning cells and 17,900 unburned cells. The experiment uses a 15-minute horizon, two 10,000-litre tankers, one 5,000-litre scooper, and 5,000-litre drops. Tanker and scooper speed limits are 10,000 and 6,000 m/min, respectively; these are specified model inputs rather than validated operating speeds. The airfield is $(0,0)$ and scooper water-source cells are $(0,229)$ and $(81,0)$. These locations are experimental placeholders. The deposition heading is $45^\circ$ and the suppression demand is 900 litres per cell.
+
+The recorded model contains 74,693 variables, including 58,951 binary variables, 74,643 linear constraints, and 29,442 general constraints. Two saved full-landscape runs dated 1 October 2026 use configured solver budgets of 60 s and 500 s. Their logs identify Gurobi 13.0.0 on Windows with an Intel Core i7-13620H processor. Both return replay-validated incumbents, but neither proves primary optimality. The measured outcomes are given in Table~\ref{tab:landscape-results}.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Recorded full-landscape incumbents. Budget is the configured solver allowance; elapsed time excludes model construction. Neither run proves the complete objective hierarchy optimal.}
+\label{tab:landscape-results}
+\begin{tabular}{rrrrrr}
+\hline
+Budget (s) & Elapsed (s) & $B$ & Distance (m) & Cells out & Primary gap \\
+\hline
+60 & 48.87 & 14,400 & 0 & 0 & 6.78\% \\
+500 & 497.56 & 14,274 & 51,660 & 16 & 5.46\% \\
+\hline
+\end{tabular}
+\end{table}
+
+With no suppression, the burden is $960\times15=14{,}400$ burning cell-steps. The shorter run retains this parked baseline: its primary stage reaches the time limit, and its secondary stage proves that zero travel is optimal under the retained primary cap. This does not establish that avoiding suppression is globally optimal, because the primary objective remains unproven.
+
+The longer run performs 12 drops and extinguishes 16 cells by the final boundary, leaving 944 burning cells. The number extinguished can exceed the number of drops because a footprint can affect several cells. Its burden of 14,274 is 126 cell-steps below the unsuppressed baseline, an improvement of approximately $0.88\%$. Both stages reach their time limits. The saved primary lower bound is 13,495 cell-steps, giving a remaining primary gap of approximately $5.46\%$ relative to the returned incumbent. The secondary gap is also unresolved, so the 51,660 m route is not established as the minimum distance for the best primary value. Both full-landscape results are consequently labelled \texttt{FEASIBLE}.
+
+An earlier implementation note records a size-limited licence preventing a full solve in another environment. The saved full-landscape logs provide evidence of subsequent runs that did execute, and are the basis for the values reported here. They do not establish the licence available in every environment. The two budgets also represent individual runs, not a replicated timing study, and should not be used to infer a general relationship between runtime and solution quality.
+
+\section{Reproduction Procedure}
+\label{sec:validation-reproduction}
+
+From the \texttt{integration/static\_v3} directory, using a Python environment with the project dependencies and an appropriate Gurobi licence, the controlled expectations and experiments can be reproduced with:
+\begin{verbatim}
+python validation_cases/run_validation.py --expected-only
+python validation_cases/run_validation.py --case single_drop
+python validation_cases/run_validation.py
+\end{verbatim}
+The first command displays the expected answers without importing the model dependencies or solving. The second runs the basic case, and the third runs all five. A fully successful all-case comparison ends with \texttt{5/5 cases passed.} Failures produce a nonzero exit status and a saved explanation. Each case has a 30 s solver allowance; dependency or licence failures are distinct from an incorrect computed schedule.
+
+The broader regression suite, small demonstration, and full landscape can be invoked with:
+\begin{verbatim}
+python -m pytest tests
+python run_static.py --demo
+python run_static.py --build-only
+python run_static.py --time-limit 500
+\end{verbatim}
+The build-only command constructs the standard model without optimising it. Controlled outputs are saved below \texttt{validation\_cases/outputs/}, while standard runs are saved below \texttt{outputs/}. Scenario files must be retained with results because command-line settings can differ from the current defaults. Solver status, validation status, and expected-value comparison should be inspected together rather than inferring success from a plot or from the existence of an output file.
+
+\section{Interpretation and Limitations}
+\label{sec:validation-limitations}
+
+The five successful cases establish that the implemented optimiser can recover independently known answers for isolated movement, deposition, capacity, refill, and reachability conditions. Replay and regression checks strengthen confidence in action accounting and geographic consistency. They do not establish physical suppression effectiveness, continuous flight feasibility, multi-aircraft tactical safety, or correctness of a coupled FARSITE simulation.
+
+The static fire assumption removes growth while aircraft are travelling, and the cumulative-water threshold omits fuel-specific demand, changing fire intensity, evaporation, and recovery after partial wetting. Service intervals hold the aircraft stationary at a grid location, so a drop is represented as a scheduling action rather than a moving release trajectory. Manhattan displacement and sampled occupancy are similarly discretisation choices whose operational consequences require further evaluation.
+
+The full-landscape results demonstrate construction of the larger model and production of feasible schedules, but the remaining primary and secondary gaps limit conclusions about solution quality. In particular, the modest reduction in burning cell-steps cannot establish fleet sufficiency, operational effectiveness, or computational readiness for live deployment. Further work should combine replicated computational experiments, sensitivity to cell size and timestep, physically calibrated deposition and suppression data, and explicit validation of the rolling-horizon interface. This preserves the role of the static experiment as a verified foundation for dynamic integration rather than treating it as a complete wildfire-response simulation.
