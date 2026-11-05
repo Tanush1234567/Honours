@@ -1,0 +1,7 @@
+# Only needed if you are not using the existing integration_v2/.venv.
+# The --probe-only option needs none of these Python packages.
+numpy>=1.24,<3
+rasterio>=1.4.4,<2
+geopandas>=1.0,<2
+shapely>=2.0,<3
+matplotlib>=3.7,<4
