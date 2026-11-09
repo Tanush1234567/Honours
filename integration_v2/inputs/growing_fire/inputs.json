@@ -1,0 +1,33 @@
+{
+  "synthetic": true,
+  "rows": 12,
+  "cols": 12,
+  "cell_size_m": 30,
+  "extent_m": [
+    360,
+    360
+  ],
+  "crs": "EPSG:32633",
+  "fuel_model": 1,
+  "initial_burning_cells": 9,
+  "ignition_rows_inclusive": [
+    7,
+    9
+  ],
+  "ignition_cols_inclusive": [
+    2,
+    4
+  ],
+  "airfield": [
+    11,
+    0
+  ],
+  "water_cells": [
+    [
+      11,
+      11
+    ]
+  ],
+  "num_tankers": 1,
+  "num_scoopers": 1
+}

@@ -42,6 +42,19 @@ Both small cases use one tanker, a 4-step forecast, a 2-step execution prefix,
 and an 8-step limit by default. The backend is recorded in every result. The
 graph demo is explicitly labelled `DEMO_GRAPH_SPREAD_NOT_FARSITE`.
 
+For a larger native example with nine initially burning cells on a 12-by-12
+grid, one tanker and one scooper, use the separate
+[growing-fire input set](inputs/growing_fire/README.md):
+
+```powershell
+integration_v2/.venv/Scripts/python.exe integration_v2/inputs/growing_fire/run_scenario.py
+```
+
+It uses short-grass fuel and runs for up to 16 simulated minutes, updating every
+two minutes. Outputs go to `integration_v2/outputs/growing_fire/`. A native
+validation run showed new ignitions, suppression and scooper refill activity
+across eight windows. Do not add either demo flag to this command.
+
 To see real FARSITE growth across windows without aircraft suppression:
 
 ```powershell
